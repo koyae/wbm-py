@@ -1,10 +1,10 @@
 # -*- coding: cp1252 -*-
 from copy import copy,deepcopy
+from math import ceil,log10,log
 from datetime import *
 from time import *
 
 import bitstring
-import math
 import wave
 import os
 import re
@@ -13,7 +13,20 @@ i=-1
 
 
 def get_bookmarks(filename,tidyFunc=None,shiftHackFirst=False):
-##    try:
+    """ -> list of dictionaries describing the bookmarks found in `filename`
+    See docstring of next_mark() for information about dictionary-keys.
+
+filename        --  Path to a .wbm-file which contains one or more bookmarks.
+
+tidyFunc        --  Optional. Function. A function or other object with callable
+                    signature func(string) which returns a cleaned-up string.
+                    Use this if you have odd characters in the names/descriptions
+                    of your bookmarks.
+
+shiftHackFirst  --  Optional. Boolean. Whether or not the first bookmark in the
+                    file is off by a factor of 16. Leave false unless you're
+                    sure this is true for the particular .wbm you're using.
+    """
     handle = open(filename,'rb')
     info = []
     result=None
@@ -24,9 +37,7 @@ def get_bookmarks(filename,tidyFunc=None,shiftHackFirst=False):
             filePosition = result[1]
             info.append(result[0])
     except BufferError,e:
-        print "Reached end of file."
-##    except Exception,e:
-##        raise e
+        print "Reached end of file '{}'.".format(filename)
     finally:
         try: handle.close()
         except: pass
@@ -101,8 +112,11 @@ startAt     --  Integer. 0 or byte at which the namelength descriptor field
         if not raw: raise BufferError("EOF or otherwise failed to read bytes.")
         data = post(raw)
         newPos = startAt + length
-        print "Data: {0} ({1}) starting at {2} (x{2:X}), stopping just before {3} (x{3:X})".format(repr(data),repr(raw),startAt,newPos)
-        if shoutstring: shout(shoutstring)
+        if shoutstring:
+            s = "Data: {0} ({1}) starting at {2} (x{2:X}), "
+            s += "stopping just before {3} (x{3:X})"
+            print s.format(repr(data),repr(raw),startAt,newPos)
+            shout(shoutstring)
         return data,newPos
 
     def process_posix_time(data):
@@ -110,44 +124,40 @@ startAt     --  Integer. 0 or byte at which the namelength descriptor field
         return decrt(data,bytecount=4)
     ######################################################## :helper functions #
     ############################################################################
-    print "Starting at {} ({})".format(startAt,hex(startAt))
     tidyFunc = tidyname if not tidyFunc else tidyFunc
     if not startAt:
         handle.seek(7,os.SEEK_CUR) # allows header info be skipped
         startAt = handle.tell()
     else: handle.seek(startAt)
     markdict = {}
-    namelength,startAt = read_and_advance(1,startAt,decr,'namelen1')
+    namelength,startAt = read_and_advance(1,startAt,decr)
     if namelength == 0xFF:
-        namelength,startAt = read_and_advance(4,startAt,decr,'namelen2')
+        namelength,startAt = read_and_advance(4,startAt,decr)
     # ^ namelength is only used literally for values 254 and below, if the
     # ^.. bookmark's name/description is any longer than that, we read the
     # ^.. next 4 bytes as that number instead, and the first xFF is passed over
-    markdict["rawname"],startAt = read_and_advance(namelength,startAt,'rawname')
+    markdict["rawname"],startAt = read_and_advance(namelength,startAt)
     markdict["name"] = tidyFunc( markdict["rawname"] ) # bookmark name
-    fnlength,startAt = read_and_advance(1,startAt,dec,'fnlength')
-    fn,startAt = read_and_advance(fnlength,startAt,'filename')
+    fnlength,startAt = read_and_advance(1,startAt,dec)
+    fn,startAt = read_and_advance(fnlength,startAt)
     markdict["fn"] = fn # parent file name
-    markdict["framepos"],startAt = read_and_advance(8,startAt,decr,'framepos')
+    markdict["framepos"],startAt = read_and_advance(8,startAt,decr)
     markdict["lucky"],startAt = read_and_advance(2,startAt)
     markdict["lonely"],startAt = read_and_advance(2,startAt)
-    markdict["id"],startAt = read_and_advance(4,startAt,decr,'mark id')
-    markdict["vizn"],startAt = read_and_advance(1,startAt,dec,'visitcount')
-    shout("epoch")
+    markdict["id"],startAt = read_and_advance(4,startAt,decr)
+    markdict["vizn"],startAt = read_and_advance(1,startAt,dec)
     markdict["epoch"],startAt = read_and_advance(4,startAt,process_posix_time)
-    shout("epoch")
     markdict["lastviz"] = strftime("%x %X",
                                    ( datetime(1970,1,1,0,0,0)
                                      + timedelta(0,markdict["epoch"])
                                    ).timetuple()
                                   )
 ##    print "at",handle.tell(),"(",hex(handle.tell()),")"
-    print markdict
     return markdict,startAt+1
 
 
 def tidyname(text):
-    """ Tidy up the name of a bookmark """
+    """ (str) -> str. Tidy up the name of a bookmark after it's been read. """
     weirdChars = {'\xc2\xA0':' ', # nbsp -> regular space
                   '\xc3\xA9':'é', # accented 'e'
                   '\xe2\x80\x94':'-', # map long dash / em dash -> hyphen
@@ -179,8 +189,6 @@ parentfile -- String. Optional. Full path to the file which the bookmarks
     """
     if not parentfile: parentfile = bookmarks[0]["fn"]
     try:
-        print "Opening: "
-        print parentfile
         pf = WaveReadWrapper(parentfile)
         for bm in bookmarks:
             framepos = bm["framepos"]
@@ -191,12 +199,8 @@ parentfile -- String. Optional. Full path to the file which the bookmarks
                              int(secpos//60),
                              secpos%60
                            )
-        print "frames:", pf.getnframes()
-        print "contentbytes:", pf.contentbyten
-        print "file duration:", pf.sec_duration
-##    except Exception, e:
-##        print "Could not open parent file. Sorry."
-##        raise e
+    except Exception, e:
+        print "Could not open parent file. Sorry."
     finally:
         try: pf.close()
         except: pass
@@ -204,13 +208,18 @@ parentfile -- String. Optional. Full path to the file which the bookmarks
 
 
 class WaveReadWrapper(object):
+    """ (filename) -> instance.
 
+    Class that provides all of the functionality of wave.Wave_read objects, plus
+    a few extra bits of information helpful for understanding a bit more about
+    the loaded file. """
 
     def __init__(self,filename):
         self.open(filename)
         
 
     def open(self,filename):
+        """ (file path) -> None. Open a new file. """
         wavehandle = wave.open(filename,'rb')
 ##        print dir(wavehandle)
         duration = wavehandle.getnframes() / float(wavehandle.getframerate())
@@ -225,6 +234,7 @@ class WaveReadWrapper(object):
         # :update_dictionary
         
     def __dir__(self):
+        """ Magic method primarily used to provide proper calltips to IDEs. """
         # Transparently expose Wave_read internals along with own attributes:
         dirl = deepcopy(dir(self.candy))
         dirl.extend( self.__dict__.keys() )
@@ -232,12 +242,17 @@ class WaveReadWrapper(object):
         
 
     def __getattr__(self,attr):
+        """ Magic method used to expose wrapped wave.Wave_read object. """
         # expose everything else from the wrapped object:
         return getattr(self.candy,attr)
 
 
     
 def bindisplay(decimal,mingroups=0):
+    """ (int,groupcount) -> string. Given a decimal, display as unsigned binary
+    with bits grouped into sets of 4.
+    """
+    if decimal<0: raise NotImplementedError("Func doesn't do negatives yet.")
     s = bin(decimal).replace('0b','')
     fillamount = (4-len(s)%4)+len(s)
     # ^ fill to nearest halfbyte
@@ -263,9 +278,9 @@ post -- optional function to format the resulting integer, generally for display
     pre = (lambda a:a) if not pre else pre
     post = (lambda a:a) if not post else post
     f = lambda a: "{:0>02X}".format(ord(a))
-    # ^ here, we show hex ints without the '0x' prefix, and pad with a
-    # ^.. leading 0 if we would have a single-digit hex-character e.g. we'd show
-    # ^.. '05' instead of just '5'
+    # ^ here, we format hex ints without the '0x' prefix, and pad with a
+    # ^.. leading 0 if we would have a single-digit hex-character.
+    # ^.. e.g.: we'd show '05' instead of just '5'
     s = pre(s)
     s = s if type(s)==type([]) else list(s)
     s = map(f, s)
@@ -274,6 +289,7 @@ post -- optional function to format the resulting integer, generally for display
 
 
 def decf(s,pre=None):
+    """ -> float. Convert bits/bytes representing an unsigned int. """
     return dec(s,pre,float)
 
 
@@ -289,69 +305,71 @@ def decrt(s,bitcount=None,bytecount=None):
 
 
 def dectest(s):
+    """(space-delimited pairs of characters representing little-endian hex bits)
+    -> int.
+
+    Example: dectest("00 01") -> 256
+    """
     if type(s) != type([]): s = s.split(" ")
     s.reverse()
     return int("".join(s),16)
 
 
 def burp(s):
+    """ (str) -> str. Remove the spaces found in a string. """
     s = s.replace(' ','')
     return s
 
 
 def rburp(s):
-    return burp(r(s))
+    """ (str) -> str. Reverse a string and remove the spaces from it. """
+    return burp(r(s," "))
 
 
 def r(s,splitby=None):
+    """ (str or list[, split character]) -> str. Reverse a list or string.
+    NOTE: if passed a list, it will be reversed in the calling scope.
+    """
     s = s if type(s)==type([]) else list(s)
     s.reverse()
     return ''.join(s)
 
 
 def two(integer,bitcount=None,bytecount=None):
-    """ Compute two's complement of an unsigned integer, based off a bit-width
-    or byte-width """
+    """ (positive integer, bit-width or byte-width) -> integer.
+    Compute two's complement of an unsigned integer, based off a bit-width
+    or byte-width. """
     # setup:
+    if integer<0:
+        raise ValueError("Can't compute two's complement on a negative number.")
+    elif integer==0:
+        return integer
     if bytecount and bitcount:
         raise ValueError("Pass either bytecount or bitcount, not both.")
     elif bytecount:
         bitcount = int(bytecount * 8)
+    if (integer>>bitcount) > 0:
+        raise ValueError("Specified bitcount too small to represent integer.")
+    # ^ above, shifting by bitcount should completely zero the integer, if it
+    # ^.. does not, it means the integer has more binary digits than the count
+    # ^.. given
     # :setup
-    if ("{:0>"+str(bitcount)+"b}").startswith("0"):
-    # if there's a leading zero, we have no negative offset, so do nothing:
-        return integer
-    else:
-        sa = bitcount - 1 # compute shift-amount
-        return (integer&int('1'*sa,2)) - ((integer>>sa)<<sa)
-        # ^ above, subtract greatest digit from all lower digits.
-        # ^.. For lesser digits, mask out the topmost digit using bitwise AND
-        # ^.. For greatest digit, perform two bitshifts to get the form
-        # ^.. "X0000..." where X is the greatest digit and 0 now holds the place
-        # ^.. of all lesser digits.
-
-##def two(s):
-##    bi = bitstring.Bits(bin=s)
-##    return bi.int
+    sa = bitcount - 1 # compute shift-amount
+    return (integer&((1<<sa)-1)) - ((integer>>sa)<<sa)
+    # ^ above, subtract greatest digit from all lower digits.
+    # ^.. For lesser digits, mask out the topmost digit using bitwise AND
+    # ^.. For greatest digit, perform two bitshifts to get the form
+    # ^.. "X0000..." where X is the greatest digit and 0 now holds the place
+    # ^.. of all lesser digits.
 
 
 def dnumerate(dic):
-    """ -> generator. Keyword `enumerate` analog for dictionaries """
+    """ -> generator. Analog of the `enumerate` keyword but for dictionaries """
     return ( (x,y) for x,y in zip(dic.keys(),dic.values()) )
 
 
-def fudge(x):
-    """ Until I discover precisely what's going on, we'll use this fudge-factor
-function to approximate the error that's currently occurring."""
-    return x/100000 + (x/2408300.0)
-
-
-def snipe(x,contentbytes):
-    """ Function which appears to give more accurate results than fudge() """
-    return 4 * (  ( contentbytes / float(x) ) ** i  )
-
-
 def shout(s):
+    """ (string) -> None. For testing: output stuff to console obviously. """
     pad = ' '*((60 - len(s)) // 2)
     print pad+"--------- "+s.upper()+" ---------"+pad
 
@@ -403,7 +421,35 @@ def as_tuples(bookmarks,lastFrameNumber):
 
 
 def get_filename_generator(fileCount,source,dest="",sourceExt=True,noExt=False):
-    """ -> generator object for filenames according to parameters. """
+    """ -> generator object for filenames according to parameters.
+
+    If splitting a file up into multiple pieces, this function can be used
+    to make naming all of those pieces easier.
+
+source      --  String. Path to a source of data. (Or simply a filename if
+                file is in cwd).
+
+dest        --  Optional. String. Leading part of the name for the
+                destination-files which this function will write to disk.
+                Can be either a destination-directory, or a filename
+                e.g. "output.wav"
+                
+                Note that generated names will have a suffix appended, so the
+                actual output given dest="output.wav" would be something like
+                "output_part_01.wav", "output_part_02.wav", etc.
+
+                Similarly, if no dest is provided, output filenames will look
+                like "sourcefile_part_01.wav", "sourcefile_part_02.wav", etc.
+
+sourceExt   --  Optional. Bool. Whether to use the same extension as that of
+                `source` file.
+                If set false with noExt also false, `dest`'s extension is used.
+                If set true with `noExt` false, `source`'s extension is used.
+                If noExt is set true, this setting is ignored.
+
+noExt       --  Optional. Bool. Whether to append no file-extension at all
+                in the generated names.
+    """
     if not os.path.isfile(source):
         raise ValueError("No valid source-file provided.")
     destIsDir = os.path.isdir(dest)
@@ -428,7 +474,7 @@ def get_filename_generator(fileCount,source,dest="",sourceExt=True,noExt=False):
         destDir = os.path.dirname(source)
         destExt = ext(source)
     if noExt: destExt = "" # override other settings if true
-    numberFormat = "{:0>" + str(int(math.ceil(math.log10(fileCount)+1))) + "}"
+    numberFormat = "{:0>" + str(int(ceil(log10(fileCount)+1))) + "}"
     destBase = os.path.join(destDir,destEfn) + "_part_" + numberFormat + destExt
     for x in range(0,fileCount):
         yield destBase.format(x)
@@ -453,31 +499,20 @@ spans       --  Iterable. Either a container of tuples of the form:
 source      --  String. Path to source-file from which pieces of audio will be
                 copied.
 
-dest        --  Optional. String. Leading part of the name for the
-                destination-files which this function will write to disk.
-                Can be either a destination-directory, or a filename
-                e.g. "output.wav"
-                
-                Note that output files will have a suffix appended, so by
-                default the actual output given dest="output.wav" would be
-                something like "output_part_01.wav", "output_part_02.wav", etc.
+dest        --  String. Parameter to get_filename_generator().
+                Ignored if providing own `fnGen`
 
-                Similarly if no dest is provided, output filenames will look
-                like "sourcefile_part_01.wav", "sourcefile_part_02.wav", etc.
+sourceExt   --  Bool. Parameter to get_filename_generator().
+                Ignored if providing own `fnGen`
 
-sourceExt   --  Optional. Bool. Whether to use the same extension as that of
-                `source` file.
-                If set false along with noExt, `dest`'s extension is used.
-                If set true with `noExt` false, `source`'s extension is used.
-                If noExt is set true, this setting is ignored.
-
-noExt       --  Optional. Bool. Whether to append no file-extension at all
-                in the output files.
+noExt       --  Bool. Parameter to get_filename_generator().
+                Ignored if providing own `fnGen`
 
 fnGen       --  Optional. Generator. A generator-object (or similar) which will
                 provide file-names for each span on every call of next() on the
-                object. Make sure generator will yield enough names for all
-                items in `spans` before it raises a StopIteration.
+                object. If passing a value for this option, make sure generator
+                will yield enough names for all items in `spans` before it
+                raises a StopIteration.
 
                 Defaults to: generator returned by get_filename_generator()
 
@@ -501,5 +536,4 @@ fnGen       --  Optional. Generator. A generator-object (or similar) which will
         whandle.setparams( rhandle.getparams() )
         whandle.writeframes( data )
         whandle.close()
-##        print "Would write:", destBase.format(x+1)
     return toc
