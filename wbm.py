@@ -9,8 +9,6 @@ import wave
 import os
 import re
 
-i=-1
-
 
 def get_bookmarks(filename,tidyFunc=None,shiftHackFirst=False):
     """ -> list of dictionaries describing the bookmarks found in `filename`
@@ -152,7 +150,6 @@ startAt     --  Integer. 0 or byte at which the namelength descriptor field
                                      + timedelta(0,markdict["epoch"])
                                    ).timetuple()
                                   )
-##    print "at",handle.tell(),"(",hex(handle.tell()),")"
     return markdict,startAt+1
 
 
