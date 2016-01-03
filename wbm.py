@@ -385,18 +385,25 @@ def ext(path):
     return os.path.splitext(path)[1]
 
 
-def generate_tuples(bookmarks,lastFrameNumber):
-    """ (iterable of bookmark-dictionaries) -> list of tuples """
+def as_tuples(bookmarks,lastFrameNumber):
+    """ (iterable of bookmark-dictionaries) -> list of tuples
+
+    Returned tuples: will have the form:
+        (startFrame, stopFrame, bookmark description)
+    """
     tuples = []
     for x in range(len(bookmarks[:-1])):
-        tuples.append( (bookmarks[x]["framepos"], bookmarks[x+1]["framepos"]) )
-    tuples.append( (bookmarks[-1]["framepos"],lastFrameNumber) )
+        tuples.append( (bookmarks[x]["framepos"],
+                        bookmarks[x+1]["framepos"],
+                        bookmarks[x]["name"]) )
+    tuples.append( (bookmarks[-1]["framepos"],
+                    lastFrameNumber,
+                    bookmarks[-1]["name"]) )
     return tuples
 
 
-def copy_pieces(tuples,source,dest="",sourceExt=True,noExt=False):
-    """ Copy one or more spans from a .wav-file to one or more other files. """
-    rhandle = wave.open(source,'rb')
+def get_filename_generator(fileCount,source,dest="",sourceExt=True,noExt=False):
+    """ -> generator object for filenames according to parameters. """
     if not os.path.isfile(source):
         raise ValueError("No valid source-file provided.")
     destIsDir = os.path.isdir(dest)
@@ -421,13 +428,78 @@ def copy_pieces(tuples,source,dest="",sourceExt=True,noExt=False):
         destDir = os.path.dirname(source)
         destExt = ext(source)
     if noExt: destExt = "" # override other settings if true
-    numberFormat = "{:0>" + str(int(math.ceil(math.log10(len(tuples))+1))) + "}"
+    numberFormat = "{:0>" + str(int(math.ceil(math.log10(fileCount)+1))) + "}"
     destBase = os.path.join(destDir,destEfn) + "_part_" + numberFormat + destExt
+    for x in range(0,fileCount):
+        yield destBase.format(x)
+
+
+def copy_pieces(spans,source,dest="",sourceExt=True,noExt=False,fnGen=None):
+    """ Copy one or more spans from a .wav-file to one or more other files.
+    -> list.
+    
+    If spans are passed as an iterable of bookmark-dictionaries or if tuples
+    provide descriptions at [2], returns toc-list will contain a mapping
+    between bookmark names/descriptions and the files which were output.
+    If tuples are only of length 2, returned list will be empty.
+
+spans       --  Iterable. Either a container of tuples of the form:
+                (startFrame,stopFrame[,description]) OR a container of
+                bookmark-dictionaries*
+
+                * the format returned by get_bookmarks() in aggregate and
+                next_mark() as individuals.
+
+source      --  String. Path to source-file from which pieces of audio will be
+                copied.
+
+dest        --  Optional. String. Leading part of the name for the
+                destination-files which this function will write to disk.
+                Can be either a destination-directory, or a filename
+                e.g. "output.wav"
+                
+                Note that output files will have a suffix appended, so by
+                default the actual output given dest="output.wav" would be
+                something like "output_part_01.wav", "output_part_02.wav", etc.
+
+                Similarly if no dest is provided, output filenames will look
+                like "sourcefile_part_01.wav", "sourcefile_part_02.wav", etc.
+
+sourceExt   --  Optional. Bool. Whether to use the same extension as that of
+                `source` file.
+                If set false along with noExt, `dest`'s extension is used.
+                If set true with `noExt` false, `source`'s extension is used.
+                If noExt is set true, this setting is ignored.
+
+noExt       --  Optional. Bool. Whether to append no file-extension at all
+                in the output files.
+
+fnGen       --  Optional. Generator. A generator-object (or similar) which will
+                provide file-names for each span on every call of next() on the
+                object. Make sure generator will yield enough names for all
+                items in `spans` before it raises a StopIteration.
+
+                Defaults to: generator returned by get_filename_generator()
+
+    """
+    # setup:
+    rhandle = WaveReadWrapper(source)
+    framecount = rhandle.getnframes()
+    toc = []
+    if not fnGen: fnGen = get_filename_generator( len(spans),source,
+                                                 dest,sourceExt,noExt )
+    tuples = spans if type(spans[0])==type((0,0)) else as_tuples(spans,
+                                                                 framecount)
+    namesGiven = (len(tuples[0])==3)
+    # :setup
     for x,t in enumerate(tuples):
         rhandle.setpos(t[0])
         data = rhandle.readframes(t[1] - t[0])
-        whandle = wave.open(destBase.format(x+1),'wb')
+        outputName = fnGen.next()
+        if namesGiven: toc.append('{}\t"{}"'.format(outputName,t[2]))
+        whandle = wave.open(outputName,'wb')
         whandle.setparams( rhandle.getparams() )
         whandle.writeframes( data )
         whandle.close()
 ##        print "Would write:", destBase.format(x+1)
+    return toc
