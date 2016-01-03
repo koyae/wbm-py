@@ -417,15 +417,16 @@ def as_tuples(bookmarks,lastFrameNumber):
     return tuples
 
 
-def get_filename_generator(fileCount,source,dest="",sourceExt=True,
+def get_filename_generator(fileCount,source="",dest="",sourceExt=True,
                            noExt=False,middlefix="_part_"):
     """ -> generator object for filenames according to parameters.
 
     If splitting a file up into multiple pieces, this function can be used
     to make naming all of those pieces easier.
 
-source      --  String. Path to a source of data. (Or simply a filename if
-                file is in cwd).
+source      --  String. Optional. Recommended if `dest` argument is not passed.
+                Path to a source of data. (Or simply a filename if file is
+                in cwd or search-path).
 
 dest        --  Optional. String. Leading part of the name for the
                 destination-files which this function will write to disk.
@@ -451,7 +452,7 @@ noExt       --  Optional. Bool. Whether to append no file-extension at all
 middlefix   --  Optional. String. Component to append between the initial
                 filename and the numeric suffix and file-extension (if any).
     """
-    if not os.path.isfile(source):
+    if source and not os.path.isfile(source):
         raise ValueError("No valid source-file provided.")
     destIsDir = os.path.isdir(dest)
     destDir = ""
@@ -475,13 +476,13 @@ middlefix   --  Optional. String. Component to append between the initial
         destDir = os.path.dirname(source)
         destExt = ext(source)
     if noExt: destExt = "" # override other settings if true
-    numberFormat = "{:0>" + str(int(ceil(log10(fileCount)+1))) + "}"
+    numberFormat = "{:0>" + str(int(ceil(log10(fileCount)))) + "}"
     destBase = os.path.join(destDir,destEfn) +middlefix+ numberFormat + destExt
     for x in range(0,fileCount):
         yield destBase.format(x)
 
 
-def copy_pieces(spans,source,dest="", sourceExt=True, noExt=False,
+def copy_pieces(spans,source="",dest="", sourceExt=True, noExt=False,
                 middlefix="_part_", fnGen=None):
     """ Copy one or more spans from a .wav-file to one or more other files.
     -> list.
@@ -491,6 +492,11 @@ def copy_pieces(spans,source,dest="", sourceExt=True, noExt=False,
     between bookmark names/descriptions and the files which were output.
     If tuples are only of length 2, returned list will be empty.
 
+    Tip: if copying spans from a number of files, you can create a generator
+    separately for all those spans and keep passing it in as `fnGen`, that way
+    your naming-and-numbering scheme will remain consistent despite multiple
+    calls to copy_pieces() on multiple files.
+
 spans       --  Iterable. Either a container of tuples of the form:
                 (startFrame,stopFrame[,description]) OR a container of
                 bookmark-dictionaries*
@@ -498,19 +504,21 @@ spans       --  Iterable. Either a container of tuples of the form:
                 * the format returned by get_bookmarks() in aggregate and
                 next_mark() as individuals.
 
-source      --  String. Path to source-file from which pieces of audio will be
-                copied.
+source      --  Optional if `spans` is bookmark-dictionaries not tuples. String.
+                Path to source-file from which pieces of audio will be copied.
 
-dest        --  String. Parameter to get_filename_generator().
+                Defaults to: the value of ["fn"] from the first dict in `spans`
+
+dest        --  Optional. String. Parameter to get_filename_generator().
                 Ignored if providing own `fnGen`
 
-sourceExt   --  Bool. Parameter to get_filename_generator().
+sourceExt   --  Optional. Bool. Parameter to get_filename_generator().
                 Ignored if providing own `fnGen`
 
-noExt       --  Bool. Parameter to get_filename_generator().
+noExt       --  Optional. Bool. Parameter to get_filename_generator().
                 Ignored if providing own `fnGen`
 
-middlefix   --  String. Parameter to get_filename_generator().
+middlefix   --  Optional. String. Parameter to get_filename_generator().
                 Ignored if providing own `fnGen`
 
 fnGen       --  Optional. Generator. A generator-object (or similar) which will
@@ -523,14 +531,28 @@ fnGen       --  Optional. Generator. A generator-object (or similar) which will
 
     """
     # setup:
+    justTuples = True # whether caller passed tuples vs. bookmark-dictionaries
+    # ^ just intialized here, checked later.
     rhandle = WaveReadWrapper(source)
     framecount = rhandle.getnframes()
     toc = []
     if not fnGen: fnGen = get_filename_generator( len(spans),source,dest,
                                                  sourceExt,noExt,middlefix )
-    tuples = spans if type(spans[0])==type((0,0)) else as_tuples(spans,
-                                                                 framecount)
+    tuples = spans # overridden next if incorrect.
+    if type(spans[0]) != type((0,0)):
+    # if `spans` is actually a collection of bookmark dictionaries instead:
+        tuples = as_tuples(spans,framecount)
+        justTuples = False
     namesGiven = (len(tuples[0])==3)
+    if not source and justTuples:
+        raise ValueError("No source filename provided. This must come in the"
+                         + " form of either passing bookmark-dictionaries with"
+                         + " ['fn']-values pointing to accessible files"
+                         + " (modify os.path or chdir)or by explicitly passing"
+                         + " a filename/path with `source` keyword-arg."
+                        )
+    elif (not source) and (not justTuples):
+        source = spans[0]["fn"]
     # :setup
     for x,t in enumerate(tuples):
         rhandle.setpos(t[0])
