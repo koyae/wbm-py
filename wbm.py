@@ -417,7 +417,8 @@ def as_tuples(bookmarks,lastFrameNumber):
     return tuples
 
 
-def get_filename_generator(fileCount,source,dest="",sourceExt=True,noExt=False):
+def get_filename_generator(fileCount,source,dest="",sourceExt=True,
+                           noExt=False,middlefix="_part_"):
     """ -> generator object for filenames according to parameters.
 
     If splitting a file up into multiple pieces, this function can be used
@@ -446,6 +447,9 @@ sourceExt   --  Optional. Bool. Whether to use the same extension as that of
 
 noExt       --  Optional. Bool. Whether to append no file-extension at all
                 in the generated names.
+
+middlefix   --  Optional. String. Component to append between the initial
+                filename and the numeric suffix and file-extension (if any).
     """
     if not os.path.isfile(source):
         raise ValueError("No valid source-file provided.")
@@ -472,12 +476,13 @@ noExt       --  Optional. Bool. Whether to append no file-extension at all
         destExt = ext(source)
     if noExt: destExt = "" # override other settings if true
     numberFormat = "{:0>" + str(int(ceil(log10(fileCount)+1))) + "}"
-    destBase = os.path.join(destDir,destEfn) + "_part_" + numberFormat + destExt
+    destBase = os.path.join(destDir,destEfn) +middlefix+ numberFormat + destExt
     for x in range(0,fileCount):
         yield destBase.format(x)
 
 
-def copy_pieces(spans,source,dest="",sourceExt=True,noExt=False,fnGen=None):
+def copy_pieces(spans,source,dest="", sourceExt=True, noExt=False,
+                middlefix="_part_", fnGen=None):
     """ Copy one or more spans from a .wav-file to one or more other files.
     -> list.
     
@@ -505,6 +510,9 @@ sourceExt   --  Bool. Parameter to get_filename_generator().
 noExt       --  Bool. Parameter to get_filename_generator().
                 Ignored if providing own `fnGen`
 
+middlefix   --  String. Parameter to get_filename_generator().
+                Ignored if providing own `fnGen`
+
 fnGen       --  Optional. Generator. A generator-object (or similar) which will
                 provide file-names for each span on every call of next() on the
                 object. If passing a value for this option, make sure generator
@@ -518,8 +526,8 @@ fnGen       --  Optional. Generator. A generator-object (or similar) which will
     rhandle = WaveReadWrapper(source)
     framecount = rhandle.getnframes()
     toc = []
-    if not fnGen: fnGen = get_filename_generator( len(spans),source,
-                                                 dest,sourceExt,noExt )
+    if not fnGen: fnGen = get_filename_generator( len(spans),source,dest,
+                                                 sourceExt,noExt,middlefix )
     tuples = spans if type(spans[0])==type((0,0)) else as_tuples(spans,
                                                                  framecount)
     namesGiven = (len(tuples[0])==3)
