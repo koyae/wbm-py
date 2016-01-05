@@ -418,7 +418,7 @@ def as_tuples(bookmarks,lastFrameNumber):
 
 
 def get_filename_generator(fileCount,source="",dest="",sourceExt=True,
-                           noExt=False,middlefix="_part_"):
+                           useExt=False,middlefix="_part_"):
     """ -> generator object for filenames according to parameters.
 
     If splitting a file up into multiple pieces, this function can be used
@@ -442,12 +442,26 @@ dest        --  Optional. String. Leading part of the name for the
 
 sourceExt   --  Optional. Bool. Whether to use the same extension as that of
                 `source` file.
-                If set false with noExt also false, `dest`'s extension is used.
-                If set true with `noExt` false, `source`'s extension is used.
-                If noExt is set true, this setting is ignored.
+                
+                If set false with useExt also false, `dest`'s extension is used.
+                If set true with `useExt` false, `source`'s extension is used.
+                If useExt is set true, this setting is ignored.
 
-noExt       --  Optional. Bool. Whether to append no file-extension at all
-                in the generated names.
+                Extensions with a leading '.' will not have another added, so
+                system will append multiple dots only if multiple '.'s appear
+                in the argument itself.
+
+                Extensions /without/ a leading '.' will have one added.
+
+useExt      --  Optional. Mixed. File-extension override for output filenames.
+                It is recommended that callers provide this if both `source` and
+                `dest` are empty or falsey.
+                
+                If set false: no override will occur.
+                If set None: the empty string "" will be used as the extension.
+                If string: `source`/`dest` extensions are ignored and this
+                extension is used (it can be the empty string "") if no
+                extension is desired whatsoever.
 
 middlefix   --  Optional. String. Component to append between the initial
                 filename and the numeric suffix and file-extension (if any).
@@ -458,31 +472,38 @@ middlefix   --  Optional. String. Component to append between the initial
     destDir = ""
     destEfn = ""
     destExt = ""
+    extOverride = (type(useExt)==type("")) or (useExt is None)
+    useExt = "" if useExt==None else useExt
+    useExt = '.' + useExt if (not useExt.startswith('.')) and useExt else useExt
+    # ^ only add a '.' to the beginning of useExt if it's nonempty.
     if dest and not destIsDir:
         destDir = os.path.dirname(dest)
         destEfn = ebasename(dest)
         destExt = ext(dest) if not sourceExt else ext(source)
+        # ^ overridden if extOverride
     elif dest and destIsDir:
-        if (not noExt) and (not sourceExt):
-            raise ValueError("noExt & sourceExt set False but dest is folder.")
+        if (not useExt) and (not sourceExt):
+            raise ValueError("useExt & sourceExt set False but dest is folder.")
         destDir = dest
         destEfn = ebasename(source)        
         destExt = ext(source)
+        # ^ overridden if extOverride
     else:
     # if `dest` not provided:
-        if (not noExt) and (not sourceExt):
-            raise ValueError("noExt & sourceExt set False but dest not given.")
+        if (not useExt) and (not sourceExt):
+            raise ValueError("useExt & sourceExt set False but dest not given.")
         destEfn = ebasename(source)
         destDir = os.path.dirname(source)
         destExt = ext(source)
-    if noExt: destExt = "" # override other settings if true
+        # ^ overridden if extOverride
+    if extOverride: destExt = useExt
     numberFormat = "{:0>" + str(int(ceil(log10(fileCount)))) + "}"
     destBase = os.path.join(destDir,destEfn) +middlefix+ numberFormat + destExt
     for x in range(0,fileCount):
         yield destBase.format(x)
 
 
-def copy_pieces(spans,source="",dest="", sourceExt=True, noExt=False,
+def copy_pieces(spans,source="",dest="", sourceExt=True, useExt=False,
                 middlefix="_part_", fnGen=None):
     """ Copy one or more spans from a .wav-file to one or more other files.
     -> list.
@@ -515,7 +536,7 @@ dest        --  Optional. String. Parameter to get_filename_generator().
 sourceExt   --  Optional. Bool. Parameter to get_filename_generator().
                 Ignored if providing own `fnGen`
 
-noExt       --  Optional. Bool. Parameter to get_filename_generator().
+useExt       -- Optional. Mixed. Parameter to get_filename_generator().
                 Ignored if providing own `fnGen`
 
 middlefix   --  Optional. String. Parameter to get_filename_generator().
@@ -537,7 +558,7 @@ fnGen       --  Optional. Generator. A generator-object (or similar) which will
     framecount = rhandle.getnframes()
     toc = []
     if not fnGen: fnGen = get_filename_generator( len(spans),source,dest,
-                                                 sourceExt,noExt,middlefix )
+                                                 sourceExt,useExt,middlefix )
     tuples = spans # overridden next if incorrect.
     if type(spans[0]) != type((0,0)):
     # if `spans` is actually a collection of bookmark dictionaries instead:
