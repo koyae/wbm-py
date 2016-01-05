@@ -400,21 +400,36 @@ def ext(path):
     return os.path.splitext(path)[1]
 
 
-def as_tuples(bookmarks,lastFrameNumber):
-    """ (iterable of bookmark-dictionaries) -> list of tuples
+def as_tuples(spans,lastFrameNumber):
+    """ (iterable of either tuples or bookmark-dicts) -> tuple.
 
-    Returned tuples: will have the form:
-        (startFrame, stopFrame, bookmark description)
+Returned tuple contains:
+    [0]: list/iterable of tuples:
+        (startFrame, stopFrame, bookmark description, filename)
+    [1]: boolean:
+        Describes whether tuples had bookmark-descriptions associated with them
+        
     """
+    descriptionsProvided = False # assume false for now.
+    if type(spans[0])==type((0,0)):
+    # if spans is a container of tuples:
+        if len(spans[0])>=3: descriptionsProvided = True
+        return spans,descriptionsProvided
+    else:
+    # if spans is a container of bookmark-dictionaries:
+        if "name" in spans[0].keys(): descriptionsProvided = True
+    # Otherwise, spans is assumed to be a container of bookmark-dictionaries:
     tuples = []
-    for x in range(len(bookmarks[:-1])):
-        tuples.append( (bookmarks[x]["framepos"],
-                        bookmarks[x+1]["framepos"],
-                        bookmarks[x]["name"]) )
-    tuples.append( (bookmarks[-1]["framepos"],
+    for x in range(len(spans[:-1])):
+        tuples.append( (spans[x]["framepos"],
+                        spans[x+1]["framepos"],
+                        spans[x]["name"],
+                        spans[x]["fn"]) )
+    tuples.append( (spans[-1]["framepos"],
                     lastFrameNumber,
-                    bookmarks[-1]["name"]) )
-    return tuples
+                    spans[-1]["name"],
+                    spans[-1]["fn"]) )
+    return tuples, descriptionsProvided
 
 
 def get_filename_generator(fileCount,source="",dest="",sourceExt=True,
@@ -518,12 +533,12 @@ def copy_pieces(spans,source="",dest="", sourceExt=True, useExt=False,
     your naming-and-numbering scheme will remain consistent despite multiple
     calls to copy_pieces() on multiple files.
 
-spans       --  Iterable. Either a container of tuples of the form:
-                (startFrame,stopFrame[,description]) OR a container of
-                bookmark-dictionaries*
+spans       --  Iterable. Container of tuples or bookmark-dictionaries.
 
-                * the format returned by get_bookmarks() in aggregate and
-                next_mark() as individuals.
+                Tuples take the form:
+                (startFrame,stopFrame[,description[,sourcefile]])
+
+                Bookmark-dictionaries take the form described by next_mark().
 
 source      --  Optional if `spans` is bookmark-dictionaries not tuples. String.
                 Path to source-file from which pieces of audio will be copied.
@@ -554,34 +569,44 @@ fnGen       --  Optional. Generator. A generator-object (or similar) which will
     # setup:
     justTuples = True # whether caller passed tuples vs. bookmark-dictionaries
     # ^ just intialized here, checked later.
+    toc = []
+    tuples = spans # overridden next if incorrect.
+    if not source:
+        if type(spans[0])==type((0,0)):
+        # if caller provided tuples and no explicit source-filename:
+            if not len(spans[0])>=4:
+            # if caller did not provide a filename using the tuples:
+                raise ValueError("No source filename provided. Provide one:\n"
+                                 + " 1. expicit `source` keyword-arg with "
+                                 + " filename/path \n"
+                                 + " 2. `spans` as bookmark-dictionaries with"
+                                 + " ['fn']-values pointing to accessible files"
+                                 + " (full paths or proper os.path or cwd set)"
+                                 + " \n"
+                                 + " 3. `spans` as tuples with filename at [2]."
+                                )
+            source = spans[0][3]
+        elif type(spans[0])==type({}):
+        # if caller provided bookmark-dictionaries but no explicit source-filename:
+            source = spans[0]["fn"]
+        else:
+        # if caller provided an iterable of something entirely else:
+            raise TypeError("`spans` should be iterable of dicts or tuples.")
     rhandle = WaveReadWrapper(source)
     framecount = rhandle.getnframes()
-    toc = []
+    tuples,descriptionsGiven = as_tuples(spans,framecount)
     if not fnGen: fnGen = get_filename_generator( len(spans),source,dest,
-                                                 sourceExt,useExt,middlefix )
-    tuples = spans # overridden next if incorrect.
-    if type(spans[0]) != type((0,0)):
-    # if `spans` is actually a collection of bookmark dictionaries instead:
-        tuples = as_tuples(spans,framecount)
-        justTuples = False
-    namesGiven = (len(tuples[0])==3)
-    if not source and justTuples:
-        raise ValueError("No source filename provided. This must come in the"
-                         + " form of either passing bookmark-dictionaries with"
-                         + " ['fn']-values pointing to accessible files"
-                         + " (modify os.path or chdir)or by explicitly passing"
-                         + " a filename/path with `source` keyword-arg."
-                        )
-    elif (not source) and (not justTuples):
-        source = spans[0]["fn"]
+                                                  sourceExt,useExt,middlefix )
+
     # :setup
     for x,t in enumerate(tuples):
         rhandle.setpos(t[0])
         data = rhandle.readframes(t[1] - t[0])
         outputName = fnGen.next()
-        if namesGiven: toc.append('{}\t"{}"'.format(outputName,t[2]))
+        if descriptionsGiven: toc.append('{}\t"{}"'.format(outputName,t[2]))
         whandle = wave.open(outputName,'wb')
         whandle.setparams( rhandle.getparams() )
         whandle.writeframes( data )
         whandle.close()
+    print "Completed copying segments of {}".format(source)
     return toc
