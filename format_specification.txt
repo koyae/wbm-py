@@ -1,85 +1,85 @@
-BYTES			BYTENUM		FORMAT	NICK	NOTES/DESC
+BYTES           BYTENUM     FORMAT  NICK    NOTES/DESC
 
-[0:2] 			3			????? 	profit	Always x060101 (likely header-information OR some kind of code for "PROFIT")
-
-
-[3] 			1			uint	markn	Bookmark count: the total number of bookmarks stored in the .wbm file.
+[0:2]           3           ?????   profit  Always x060101 (likely header-information OR some kind of code for "PROFIT")
 
 
-[4:5]			2			?????	profit2	More header information, it seems.
+[3]             1           uint    markn   Bookmark count: the total number of bookmarks stored in the .wbm file.
 
 
-[5]				1 			?????	filler
+[4:5]           2           ?????   profit2 More header information, it seems.
+
+
+[5]             1           ?????   filler
 
 
 [6] 
-or				1 or 5		special	namel	Name-length of first bookmark (measured in hexpairs/bytes).
-[6:10]										Has one of two formats, simple and extended:
-											· Extended: if the the leading byte is 'xFF', this is merely a signal-value, indicating that the latter 4 bytes of this field (ignoring the current xFF byte) are the little-endian integer-representation of the length of the next `name` field. This occurs if the bookmark's name is 255 bytes (xFF) or 
-											greater.
-											· Simple: if the leading byte is NOT 'xFF', then this SINGLE byte is just an 
-											integer representing the length of the `name` field.
+or              1 or 5      special namel   Name-length of first bookmark (measured in hexpairs/bytes).
+[6:10]                                      Has one of two formats, simple and extended:
+                                            · Extended: if the the leading byte is 'xFF', this is merely a signal-value, indicating that the latter 4 bytes of this field (ignoring the current xFF byte) are the little-endian integer-representation of the length of the next `name` field. This occurs if the bookmark's name is 255 bytes (xFF) or 
+                                            greater.
+                                            · Simple: if the leading byte is NOT 'xFF', then this SINGLE byte is just an 
+                                            integer representing the length of the `name` field.
 
 
-[7:7+namel]		
-or				namel		utf8	name	Bookmark's name
+[7:7+namel]     
+or              namel       utf8    name    Bookmark's name
 [11:11+namel]
 
-[8+namel]		
-or				1			uint	fnl		Name-length of the upcoming filename.
+[8+namel]       
+or              1           uint    fnl     Name-length of the upcoming filename.
 [12+namel]
 
 
 [10+namel
 :10+namel+fnl]
-or				fnl			utf8	fn		Filename that this (first) bookmark corresponds to.
+or              fnl         utf8    fn      Filename that this (first) bookmark corresponds to.
 [14+namel
 :14+namel+fnl]
 
 [11+namel+fnl
-:18+namel+fnl]	
-or				8			uint	pos		Position of bookmark expressed as an offset in FRAMES (little-endian)
-[15+namel+fnl								into the content. Frame-size is single byte for 8-bit files, pairs of
-:22+namel+fnl]								bytes for 16-bit files, etc. Frames are found starting at the file's first 
-											byte past its header.
+:18+namel+fnl]  
+or              8           uint    pos     Position of bookmark expressed as an offset in FRAMES (little-endian)
+[15+namel+fnl                               into the content. Frame-size is single byte for 8-bit files, pairs of
+:22+namel+fnl]                              bytes for 16-bit files, etc. Frames are found starting at the file's first 
+                                            byte past its header.
 
-											If you're reading the relevant file in raw bytes, bits-per-frame needs to be 
-											expressly taken into consideration as noted above. Existing libraries for 
-											reading sound-files may simply deal in frame-counts instead and handle this 
-											computation for you.
+                                            If you're reading the relevant file in raw bytes, bits-per-frame needs to be 
+                                            expressly taken into consideration as noted above. Existing libraries for 
+                                            reading sound-files may simply deal in frame-counts instead and handle this 
+                                            computation for you.
 
 [19+namel+fnl
 :20+namel+fnl]
-or				2			?????	lucky	Seems to always be x77x00 (little-endian).
+or              2           ?????   lucky   Seems to always be x77x00 (little-endian).
 [23+namel+fnl
 :24+namel+fnl]
 
 [21+namel+fnl
 :22+namel+fnl]
-or				2			?????	lonely	Seems to always be the loneliest number: x01x00 (little-endian).
+or              2           ?????   lonely  Seems to always be the loneliest number: x01x00 (little-endian).
 [25+namel+fnl
 :26+namel+fnl]
 
 [23+namel+fnl
 :26+namel+fnl]
-or				4			uint	id		Bookmark identifier (little-endian). No 0th bookmark; identifiers start at 1.
+or              4           uint    id      Bookmark identifier (little-endian). No 0th bookmark; identifiers start at 1.
 [27+namel+fnl
 :30+namel+fnl]
 
 
 [27+namel+fnl]
-or				1			uint	vizn	Visit count. (Wraps around to 0 if number exceeds 255).
+or              1           uint    vizn    Visit count. (Wraps around to 0 if number exceeds 255).
 [31+namel+fnl]
 
 
 [28+namel+fnl
 :31+namel+fnl]
-or				4			twosCom	lastviz	Time of last visit to bookmark, (signed little-endian as "seconds + 1970").
+or              4           twosCom lastviz Time of last visit to bookmark, (signed little-endian as "seconds + 1970").
 [32+namel+fnl
 :35+namel+fnl]
-											
-[32+namel+fnl]	
-or				1 or 5		uint	nextl	Just like 'namel' only for the NEXT bookmark....
-[36+namel+fnl]								
+                                            
+[32+namel+fnl]  
+or              1 or 5      uint    nextl   Just like 'namel' only for the NEXT bookmark....
+[36+namel+fnl]                              
 
-		From here, things repeat over again as if from `name` above until all bookmarks are described.
+        From here, things repeat over again as if from `name` above until all bookmarks are described.
