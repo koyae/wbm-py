@@ -15,7 +15,10 @@ BYTES           BYTENUM     FORMAT  NICK    NOTES/DESC
 [6] 
 or              1 or 5      special namel   Name-length of first bookmark (measured in hexpairs/bytes).
 [6:10]                                      Has one of two formats, simple and extended:
-                                            · Extended: if the the leading byte is 'xFF', this is merely a signal-value, indicating that the latter 4 bytes of this field (ignoring the current xFF byte) are the little-endian integer-representation of the length of the next `name` field. This occurs if the bookmark's name is 255 bytes (xFF) or 
+											· Extended: if the the leading byte is 'xFF', this is merely a signal-value,
+											indicating that the latter 4 bytes of this field (ignoring the current xFF byte)
+											are the little-endian integer-representation of the length of the next `name`
+											field. This occurs if the bookmark's name is 255 bytes (xFF) or 
                                             greater.
                                             · Simple: if the leading byte is NOT 'xFF', then this SINGLE byte is just an 
                                             integer representing the length of the `name` field.
