@@ -10,11 +10,11 @@ import os
 import re
 
 
-def get_bookmarks(filename,tidyFunc=None,shiftHackFirst=False):
-    """ -> list of dictionaries describing the bookmarks found in `filename`
+def get_bookmarks(wbmpath,wavpath=None,tidyFunc=None,shiftHackFirst=False):
+    """ -> list of dictionaries describing the bookmarks found in `wbmpath`
     See docstring of next_mark() for information about dictionary-keys.
 
-filename        --  Path to a .wbm-file which contains one or more bookmarks.
+wbmpath        --  Path to a .wbm-file which contains one or more bookmarks.
 
 tidyFunc        --  Optional. Function. A function or other object with callable
                     signature func(string) which returns a cleaned-up string.
@@ -25,7 +25,7 @@ shiftHackFirst  --  Optional. Boolean. Whether or not the first bookmark in the
                     file is off by a factor of 16. Leave false unless you're
                     sure this is true for the particular .wbm you're using.
     """
-    handle = open(filename,'rb')
+    handle = open(wbmpath,'rb')
     info = []
     result=None
     filePosition=0
@@ -35,13 +35,13 @@ shiftHackFirst  --  Optional. Boolean. Whether or not the first bookmark in the
             filePosition = result[1]
             info.append(result[0])
     except BufferError,e:
-        print "Reached end of file '{}'.".format(filename)
+        print "Reached end of file '{}'.".format(wbmpath)
     finally:
         try: handle.close()
         except: pass
     if shiftHackFirst: info[0]['framepos'] *= 16
-    papertap(info)
-    add_frame_conversions(info)
+##    papertap(info)
+    add_frame_conversions(info,wavpath)
     return info
 
         
@@ -177,14 +177,21 @@ def add_frame_conversions(bookmarks,parentfile=None):
     more info.
 
 bookmarks  -- Iterable (such as a list). A collection of bookmarks *ALL
-              REFERRING TO THE SAME PARENT-FILE;* passing bookmarks with mixed
-              parent-files will result in incorrect conversions.
+              REFERRING TO THE SAME PARENT-FILE; passing bookmarks with mixed
+              parent-files will result in an exception.
               
 parentfile -- String. Optional. Full path to the file which the bookmarks
               describe.
 
     """
-    if not parentfile: parentfile = bookmarks[0]["fn"]
+    if not parentfile:
+        parentfile = bookmarks[0]["fn"]
+        for bm in bookmarks:
+            if bm["fn"] != parentfile:
+                raise ValueError(" Please specify a file to read; source "
+                                 + " bookmark-set references multiple files:\n"
+                                 + str( list((bm["fn"] for bm in bookmarks)) )
+                                )
     try:
         pf = WaveReadWrapper(parentfile)
         for bm in bookmarks:
@@ -197,7 +204,7 @@ parentfile -- String. Optional. Full path to the file which the bookmarks
                              secpos%60
                            )
     except Exception, e:
-        print "Could not open parent file. Sorry."
+        print "Could not open parent file '{}'. Sorry.".format(parentfile)
     finally:
         try: pf.close()
         except: pass
